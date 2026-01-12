@@ -1,5 +1,5 @@
 """
-😎😎 training_router.py
+ training_router.py
 
 POST /api/train/start
 

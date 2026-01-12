@@ -1,5 +1,5 @@
 """
-😎😎 FastAPI 기준의 API 엔드포인트 계층입니다.
+ FastAPI 기준의 API 엔드포인트 계층입니다.
 
 chat_router.py
 POST /api/chat
