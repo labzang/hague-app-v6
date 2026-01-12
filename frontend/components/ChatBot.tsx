@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Loader2, Bot, User } from 'lucide-react'
+import { Send, Loader2, Bot, User, Link, GitBranch } from 'lucide-react'
 import { chatAPI, Message, DocumentSource } from '@/lib/api'
+
+type ChatMode = 'langchain' | 'langgraph'
 
 export default function ChatBot() {
   const [messages, setMessages] = useState<Message[]>([
@@ -14,6 +16,7 @@ export default function ChatBot() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [chatMode, setChatMode] = useState<ChatMode>('langchain')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -44,24 +47,38 @@ export default function ChatBot() {
     setIsLoading(true)
 
     try {
-      const response = await chatAPI.sendMessage(userMessage.content, 3)
+      // 선택된 모드에 따라 다른 API 엔드포인트 호출
+      const response = chatMode === 'langchain'
+        ? await chatAPI.sendMessage(userMessage.content, 3)
+        : await chatAPI.sendGraphMessage(userMessage.content, 3)
 
       const assistantMessage: Message = {
         role: 'assistant',
         content: response.answer,
         timestamp: new Date(),
-        sources: response.retrieved_documents.map((doc) => ({
+        sources: response.retrieved_documents?.map((doc) => ({
           content: doc.content,
           metadata: doc.metadata,
-        })),
+        })) || [],
       }
 
       setMessages((prev) => [...prev, assistantMessage])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending message:', error)
+
+      let errorContent = '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.'
+
+      if (error.response?.status === 404) {
+        errorContent = '서버에서 해당 엔드포인트를 찾을 수 없습니다. 백엔드 서버를 확인해주세요.'
+      } else if (error.response?.status === 422) {
+        errorContent = '요청 데이터 형식에 문제가 있습니다.'
+      } else if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+        errorContent = '백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.'
+      }
+
       const errorMessage: Message = {
         role: 'assistant',
-        content: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
+        content: errorContent,
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, errorMessage])
@@ -81,6 +98,38 @@ export default function ChatBot() {
 
   return (
     <div className="flex flex-col h-[600px] bg-white rounded-lg shadow-lg overflow-hidden">
+      {/* 모드 선택 버튼 */}
+      <div className="flex-shrink-0 p-4 bg-gray-50 border-b border-gray-200">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setChatMode('langchain')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${chatMode === 'langchain'
+              ? 'bg-blue-500 text-white shadow-md'
+              : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+          >
+            <Link className="w-4 h-4" />
+            LangChain
+          </button>
+          <button
+            onClick={() => setChatMode('langgraph')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${chatMode === 'langgraph'
+              ? 'bg-green-500 text-white shadow-md'
+              : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+              }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            LangGraph
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          {chatMode === 'langchain'
+            ? '🔗 LangChain RAG 체인을 사용합니다 → /api/chain'
+            : '🌿 LangGraph 워크플로우를 사용합니다 → /api/graph'
+          }
+        </p>
+      </div>
+
       {/* 메시지 영역 */}
       <div
         className="flex-1 overflow-y-auto p-4 space-y-4 chat-messages"

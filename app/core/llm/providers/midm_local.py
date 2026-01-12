@@ -24,7 +24,13 @@ def create_midm_local_llm(model_dir: Optional[str] = None) -> LLMType:
         FileNotFoundError: 모델 파일을 찾을 수 없는 경우.
     """
     try:
-        from langchain_community.llms import HuggingFacePipeline
+        # 새로운 langchain-huggingface 패키지 사용 시도
+        try:
+            from langchain_huggingface import HuggingFacePipeline
+        except ImportError:
+            # 백업으로 기존 패키지 사용
+            from langchain_community.llms import HuggingFacePipeline
+
         from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
         import torch
     except ImportError as e:
@@ -57,7 +63,7 @@ def create_midm_local_llm(model_dir: Optional[str] = None) -> LLMType:
         print("[로딩] 모델 로딩 중...")
         model = AutoModelForCausalLM.from_pretrained(
             str(model_dir),
-            torch_dtype="auto",  # 자동 dtype 선택
+            dtype="auto",  # 자동 dtype 선택 (torch_dtype 대신 dtype 사용)
             device_map="auto",   # 자동 디바이스 매핑
             trust_remote_code=True,  # Midm 모델 필수 옵션
         )

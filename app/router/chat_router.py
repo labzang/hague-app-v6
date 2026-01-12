@@ -20,12 +20,12 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 def get_vectorstore_dependency() -> VectorStoreType:
     """벡터스토어 의존성 주입."""
     try:
-        print("🔧 벡터스토어 의존성 주입 중...")
+        print("[설정] 벡터스토어 의존성 주입 중...")
         vectorstore = get_vectorstore()
-        print("✅ 벡터스토어 의존성 주입 완료")
+        print("[완료] 벡터스토어 의존성 주입 완료")
         return vectorstore
     except Exception as e:
-        print(f"❌ 벡터스토어 의존성 주입 실패: {str(e)}")
+        print(f"[오류] 벡터스토어 의존성 주입 실패: {str(e)}")
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
@@ -47,25 +47,25 @@ async def rag_query(
     - **k**: 검색에 사용할 문서 개수 (1-10)
     """
     try:
-        print(f"📝 RAG 질의 수신: question='{request.question}', k={request.k}")
+        print(f"[요청] RAG 질의 수신: question='{request.question}', k={request.k}")
 
         # Chat Service가 설정되어 있으면 사용
         chat_service = getattr(fastapi_request.app.state, 'chat_service', None)
         if chat_service is not None:
-            print("✅ Chat Service 사용")
+            print("[사용] Chat Service 사용")
         else:
-            print("⚠️ Chat Service 미설정, 기존 RAG 체인 사용")
+            print("[경고] Chat Service 미설정, 기존 RAG 체인 사용")
 
         # 검색된 문서 가져오기 (참조용)
-        print("🔍 문서 검색 중...")
-        print(f"🔍 Vectorstore type: {type(vectorstore)}")
+        print("[검색] 문서 검색 중...")
+        print(f"[검색] Vectorstore type: {type(vectorstore)}")
         try:
             retriever = vectorstore.as_retriever(search_kwargs={"k": request.k})
-            print(f"🔍 Retriever created: {type(retriever)}")
+            print(f"[검색] Retriever created: {type(retriever)}")
             source_docs = retriever.invoke(request.question)
-            print(f"✅ {len(source_docs)}개 문서 검색 완료")
+            print(f"[완료] {len(source_docs)}개 문서 검색 완료")
         except Exception as search_error:
-            print(f"❌ 문서 검색 오류: {str(search_error)}")
+            print(f"[오류] 문서 검색 오류: {str(search_error)}")
             traceback.print_exc()
             raise
 
@@ -88,7 +88,7 @@ async def rag_query(
 답변:"""
 
             # Chat Service로 응답 생성 (동기 함수를 비동기로 실행)
-            print("🤖 Chat Service로 응답 생성 중...")
+            print("[AI] Chat Service로 응답 생성 중...")
             try:
                 # Python 3.9+ 지원
                 import sys
@@ -110,9 +110,9 @@ async def rag_query(
                             temperature=0.7,
                         )
                     )
-                print("✅ Chat Service 응답 생성 완료")
+                print("[완료] Chat Service 응답 생성 완료")
             except Exception as chat_error:
-                print(f"❌ Chat Service 오류: {str(chat_error)}")
+                print(f"[오류] Chat Service 오류: {str(chat_error)}")
                 traceback.print_exc()
                 # Chat Service 실패 시 fallback으로 RAG 체인 사용
                 print("🔄 RAG 체인으로 fallback...")
@@ -121,11 +121,11 @@ async def rag_query(
                 answer = rag_chain.invoke(request.question)
         else:
             # 기존 RAG 체인 사용 (fallback)
-            print("🤖 RAG 체인으로 응답 생성 중...")
+            print("[AI] RAG 체인으로 응답 생성 중...")
             llm = getattr(fastapi_request.app.state, 'llm', None)
             rag_chain = create_rag_chain(vectorstore, llm=llm)
             answer = rag_chain.invoke(request.question)
-            print("✅ RAG 체인 응답 생성 완료")
+            print("[완료] RAG 체인 응답 생성 완료")
 
         # 응답 모델 생성
         sources = [
@@ -149,7 +149,7 @@ async def rag_query(
     except Exception as e:
         # 상세한 에러 정보 로깅
         error_msg = str(e)
-        print(f"❌ RAG 질의 중 오류 발생: {error_msg}")
+        print(f"[오류] RAG 질의 중 오류 발생: {error_msg}")
         traceback.print_exc()
         raise HTTPException(
             status_code=500,

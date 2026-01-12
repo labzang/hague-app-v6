@@ -76,7 +76,7 @@ def create_rag_chain(
         docs = retriever.invoke(question)
         context = "\n".join([f"- {doc.page_content}" for doc in docs])
 
-        return f"""🔍 검색된 관련 문서들:
+        return f"""[검색] 검색된 관련 문서들:
 {context}
 
 💡 더미 응답: 위의 문서들이 '{question}' 질문과 관련된 내용입니다.

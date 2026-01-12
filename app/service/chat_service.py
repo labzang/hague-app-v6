@@ -74,11 +74,11 @@ class QLoRAChatService:
 
     def _load_model(self) -> None:
         """모델과 토크나이저를 로드합니다."""
-        print(f"🔧 QLoRA 모델 로딩 중: {self.model_name_or_path}")
+        print(f"[로딩] QLoRA 모델 로딩 중: {self.model_name_or_path}")
 
         # GPU 사용 가능 여부 확인
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"🖥️ 사용 디바이스: {device}")
+        print(f"[디바이스] 사용 디바이스: {device}")
 
         # 토크나이저 로드
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name_or_path)
@@ -146,7 +146,7 @@ class QLoRAChatService:
             self.peft_model = get_peft_model(self.model, lora_config)
             self.model = self.peft_model
         print("😎😎😎😎😎😎😎😎😎😎")
-        print("✅ QLoRA 모델 로딩 완료!")
+        print("[완료] QLoRA 모델 로딩 완료!")
         print("😎😎😎😎😎😎😎😎😎😎")
 
     def chat(
@@ -314,7 +314,7 @@ class QLoRAChatService:
         trainer.save_model()
         self.tokenizer.save_pretrained(output_dir)
 
-        print(f"✅ 학습 완료! 체크포인트 저장 위치: {output_dir}")
+        print(f"[완료] 학습 완료! 체크포인트 저장 위치: {output_dir}")
 
     def save_adapter(self, output_path: str) -> None:
         """LoRA 어댑터를 저장합니다.
@@ -326,7 +326,7 @@ class QLoRAChatService:
             raise RuntimeError("PEFT 모델이 없습니다.")
 
         self.peft_model.save_pretrained(output_path)
-        print(f"✅ 어댑터 저장 완료: {output_path}")
+        print(f"[완료] 어댑터 저장 완료: {output_path}")
 
 
 def create_qlora_chat_service(
