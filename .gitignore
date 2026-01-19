@@ -37,16 +37,18 @@ frontend/.env*.local
 .DS_Store
 Thumbs.db
 
-# Local model weights (large files, not for Git)
-app/model/
+# AI Models and Artifacts (large files, not for Git)
+app/models/
+artifacts/
 *.safetensors
 *.bin
 *.pt
 *.onnx
-*.pem
+*.zip
 
 # Data files (large datasets, not for Git)
 app/data/
+
 # SSH keys
 *.pem
 deploy_key

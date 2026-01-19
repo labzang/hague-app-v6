@@ -24,12 +24,13 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from pydantic import BaseModel
 
-from app.api.models import HealthResponse
-from app.api.routes import search
+from app.schemas import HealthResponse
+from app.routers import search_router
 
 # 로컬 모듈 imports
 from app.config import settings
-from app.router import chat_router, mcp_router
+from app.routers import chat_router, mcp_router, search_router
+from app.routers import orchestrator_router
 
 # 환경 변수 로드
 env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -55,6 +56,18 @@ class DocumentListRequest(BaseModel):
     """Multiple documents add request model."""
 
     documents: List[dict]  # [{"content": "...", "metadata": {...}}]
+
+
+class ResearchRequest(BaseModel):
+    """연구 태스크 요청 모델"""
+    task: str
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 8192
+
+
+class SpamAnalysisRequest(BaseModel):
+    """스팸 분석 요청 모델"""
+    email: dict  # {"subject": "...", "content": "...", "sender": "..."}
 
 
 # ===== 간단한 더미 임베딩 클래스 =====
@@ -336,6 +349,8 @@ async def root() -> dict:
             "documents": "POST /documents - 문서 추가",
             "documents/batch": "POST /documents/batch - 다중 문서 추가",
             "health": "GET /health - 헬스체크",
+            "research": "POST /research - 연구 오케스트레이터",
+            "spam-analysis": "POST /spam-analysis - 스팸 분석 워크플로우",
         },
     }
 
@@ -436,16 +451,23 @@ async def api_chain(request: QueryRequest):
 
 @app.post("/api/graph", tags=["rag"])
 async def api_graph(request: QueryRequest):
-    """LangGraph API - /api/graph 엔드포인트."""
+    """채팅 에이전트 API - /api/graph 엔드포인트 (graph.py 대체)."""
     try:
-        print(f"[LangGraph] /api/graph 호출: {request.question}")
+        print(f"[ChatAgent] /api/graph 호출: {request.question}")
 
-        # LangGraph 사용
-        from app.graph import run_once
+        # 채팅 에이전트 사용 (graph.py 대체)
+        from app.agents.conversation.chat_agent import get_chat_agent
 
-        print("[LangGraph] 그래프 실행 중...")
-        answer = run_once(request.question)
-        print(f"[LangGraph] 답변 생성 완료: {answer[:100]}...")
+        chat_agent = get_chat_agent()
+        print("[ChatAgent] 에이전트 실행 중...")
+
+        result = await chat_agent.execute("chat", {
+            "message": request.question,
+            "context": {}
+        })
+
+        answer = result.get("response", "답변을 생성할 수 없습니다.")
+        print(f"[ChatAgent] 답변 생성 완료: {answer[:100]}...")
 
         # 문서 검색 (참조용)
         retrieved_docs = []
@@ -454,9 +476,9 @@ async def api_graph(request: QueryRequest):
                 retrieved_docs = app.state.vectorstore.similarity_search(
                     request.question, k=request.k
                 )
-                print(f"[LangGraph] {len(retrieved_docs)}개 문서 검색됨 (참조용)")
+                print(f"[ChatAgent] {len(retrieved_docs)}개 문서 검색됨 (참조용)")
             except Exception as e:
-                print(f"[LangGraph] 문서 검색 실패: {e}")
+                print(f"[ChatAgent] 문서 검색 실패: {e}")
 
         return {
             "question": request.question,
@@ -471,9 +493,9 @@ async def api_graph(request: QueryRequest):
             "retrieved_count": len(retrieved_docs),
         }
     except Exception as e:
-        print(f"[LangGraph] 오류: {str(e)}")
+        print(f"[ChatAgent] 오류: {str(e)}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"LangGraph 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"채팅 에이전트 오류: {str(e)}")
 
 
 @app.post("/documents", tags=["documents"])
@@ -526,11 +548,80 @@ async def add_documents(request: DocumentListRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/research", tags=["orchestrator"])
+async def research_task(request: ResearchRequest):
+    """연구 오케스트레이터 실행 (research_orchestrator_main.py 통합)"""
+    try:
+        print(f"[연구] 연구 태스크 시작: {request.task[:100]}...")
+
+        # 연구 오케스트레이터 생성 및 실행
+        from app.orchestrator.orchestrator import create_research_orchestrator
+
+        orchestrator = await create_research_orchestrator()
+
+        # 연구 태스크 실행
+        result = await orchestrator.generate_str(
+            message=request.task,
+            request_params={
+                "model": request.model,
+                "maxTokens": request.max_tokens
+            }
+        )
+
+        print(f"[연구] 연구 태스크 완료: {len(result)}자")
+
+        return {
+            "task": request.task,
+            "result": result,
+            "model": request.model,
+            "status": "completed"
+        }
+
+    except Exception as e:
+        print(f"[연구] 오류 발생: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"연구 태스크 실행 오류: {str(e)}")
+
+
+@app.post("/spam-analysis", tags=["orchestrator"])
+async def spam_analysis_task(request: SpamAnalysisRequest):
+    """스팸 분석 워크플로우 실행 (research_orchestrator_main.py 통합)"""
+    try:
+        print(f"[스팸분석] 스팸 분석 시작: {request.email.get('subject', 'No subject')}")
+
+        # 연구 오케스트레이터 생성 및 실행
+        from app.orchestrator.orchestrator import create_research_orchestrator
+
+        orchestrator = await create_research_orchestrator()
+
+        # 스팸 분석 워크플로우 실행
+        result = await orchestrator.execute_workflow(
+            workflow_name="spam_analysis",
+            task="이메일 스팸 분석",
+            context={"email": request.email}
+        )
+
+        print(f"[스팸분석] 스팸 분석 완료")
+
+        return {
+            "email": request.email,
+            "result": result,
+            "summary": result.get('summary', 'No summary available'),
+            "status": "completed"
+        }
+
+    except Exception as e:
+        print(f"[스팸분석] 오류 발생: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"스팸 분석 워크플로우 오류: {str(e)}")
+
+
 # ===== 기존 라우터 포함 (호환성 유지) =====
 try:
-    app.include_router(search.router)
+    app.include_router(search_router.router)
     app.include_router(chat_router.router)
     app.include_router(mcp_router.router)
+    app.include_router(orchestrator_router.router)
     print("[성공] MCP 라우터 포함 완료")
 except Exception as e:
     print(f"[경고] 라우터 포함 실패: {e}")
