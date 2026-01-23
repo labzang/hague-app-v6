@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Menu, X, LayoutDashboard, Ticket, TrendingUp, Package, Users, ArrowLeft } from 'lucide-react'
+import { Menu, X, LayoutDashboard, Ticket, TrendingUp, Package, Users, ArrowLeft, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,21 @@ type TabType = 'dashboard' | 'matches' | 'betting' | 'products' | 'members'
 export default function V10Admin() {
     const [activeTab, setActiveTab] = useState<TabType>('dashboard')
     const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+    /**
+     * 파일 업로드 핸들러
+     * @param event - 파일 입력 이벤트
+     */
+    const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (file) {
+            // 파일 업로드 로직 처리
+            console.log('파일 업로드:', file.name)
+            // TODO: 실제 파일 업로드 API 호출
+        }
+        // input 초기화 (같은 파일 재선택 가능하도록)
+        event.target.value = ''
+    }
 
     const tabs = [
         { id: 'dashboard' as TabType, label: '대시보드', icon: LayoutDashboard },
@@ -48,7 +63,7 @@ export default function V10Admin() {
 
     return (
         <div className="min-h-screen bg-white text-black flex flex-col">
-            {/* 헤더 - 모바일: 햄버거 메뉴, 데스크톱: 제목만 */}
+            {/* 헤더 - 모바일: 햄버거 메뉴, 데스크톱: 제목 + 파일 업로드 */}
             <header className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-3">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -62,15 +77,49 @@ export default function V10Admin() {
                         {/* 모바일: 작게, 데스크톱: 보통 크기 */}
                         <h1 className="text-lg font-bold sm:text-xl lg:text-2xl">어드민</h1>
                     </div>
-                    {/* 모바일 햄버거 메뉴 버튼 - lg 미만에서만 표시 */}
-                    <button
-                        onClick={() => setIsMenuOpen(!isMenuOpen)}
-                        className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        aria-label={isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}
-                        aria-expanded={isMenuOpen}
-                    >
-                        {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-                    </button>
+
+                    {/* 오른쪽 액션 버튼들 */}
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        {/* 파일 업로드 버튼 - 반응형: 모바일은 아이콘만, 데스크톱은 아이콘+텍스트 */}
+                        <label
+                            htmlFor="file-upload"
+                            className={cn(
+                                'cursor-pointer transition-colors rounded-lg',
+                                'flex items-center gap-2',
+                                // 모바일: 아이콘 버튼만
+                                'p-2 sm:px-3 sm:py-2',
+                                // 데스크톱: 아이콘 + 텍스트
+                                'hover:bg-gray-100',
+                                'border border-gray-300 hover:border-gray-400'
+                            )}
+                            aria-label="파일 업로드"
+                        >
+                            <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
+                            {/* 데스크톱에서만 텍스트 표시 */}
+                            <span className="hidden sm:inline text-sm font-medium">
+                                파일 업로드
+                            </span>
+                            {/* 숨겨진 파일 입력 */}
+                            <input
+                                id="file-upload"
+                                type="file"
+                                onChange={handleFileUpload}
+                                className="hidden"
+                                accept=".csv,.xlsx,.xls,.json,.txt"
+                                aria-label="파일 선택"
+                            />
+                        </label>
+
+                        {/* 모바일 햄버거 메뉴 버튼 - lg 미만에서만 표시 */}
+                        <button
+                            onClick={() => setIsMenuOpen(!isMenuOpen)}
+                            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            aria-label={isMenuOpen ? '메뉴 닫기' : '메뉴 열기'}
+                            aria-expanded={isMenuOpen}
+                        >
+                            {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                        </button>
+                    </div>
                 </div>
             </header>
 
