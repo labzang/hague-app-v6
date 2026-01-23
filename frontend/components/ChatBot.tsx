@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, Bot, User, Link, GitBranch } from 'lucide-react'
-import { chatAPI, Message, DocumentSource } from '@/lib/api'
+import { chatAPI, Message, DocumentSource } from '@/api/v10/chatAPI'
 
 type ChatMode = 'langchain' | 'langgraph'
 
@@ -43,26 +43,42 @@ export default function ChatBot() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const messageContent = input.trim()
     setInput('')
     setIsLoading(true)
 
     try {
-      // 선택된 모드에 따라 다른 API 엔드포인트 호출
-      const response = chatMode === 'langchain'
-        ? await chatAPI.sendMessage(userMessage.content, 3)
-        : await chatAPI.sendGraphMessage(userMessage.content, 3)
+      // "상품추천" 키워드가 포함된 경우 상품추천 API 호출
+      if (messageContent.includes('상품추천') || messageContent.includes('상품 추천')) {
+        const response = await chatAPI.recommendProducts(messageContent)
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: response.answer,
-        timestamp: new Date(),
-        sources: response.retrieved_documents?.map((doc) => ({
-          content: doc.content,
-          metadata: doc.metadata,
-        })) || [],
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: typeof response === 'string'
+            ? response
+            : JSON.stringify(response, null, 2),
+          timestamp: new Date(),
+        }
+
+        setMessages((prev) => [...prev, assistantMessage])
+      } else {
+        // 선택된 모드에 따라 다른 API 엔드포인트 호출
+        const response = chatMode === 'langchain'
+          ? await chatAPI.sendMessage(messageContent, 3)
+          : await chatAPI.sendGraphMessage(messageContent, 3)
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: response.answer,
+          timestamp: new Date(),
+          sources: response.retrieved_documents?.map((doc) => ({
+            content: doc.content,
+            metadata: doc.metadata,
+          })) || [],
+        }
+
+        setMessages((prev) => [...prev, assistantMessage])
       }
-
-      setMessages((prev) => [...prev, assistantMessage])
     } catch (error: any) {
       console.error('Error sending message:', error)
 

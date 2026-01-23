@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, Bot, User, Link, GitBranch } from 'lucide-react'
-import { chatAPI, Message, DocumentSource } from '@/lib/api'
+import { chatAPI, Message, DocumentSource } from '@/api/v10/chatAPI'
 
 type ChatMode = 'langchain' | 'langgraph'
 

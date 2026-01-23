@@ -62,12 +62,12 @@ export interface RAGResponse {
 export const chatAPI = {
   async sendMessage(question: string, k: number = 3): Promise<RAGResponse> {
     const requestData = { question, k }
-    console.log('Sending LangChain request to:', `${API_URL}/api/chain`)
+    console.log('Sending LangChain request to:', `${API_URL}/api/products`)
     console.log('Request body:', requestData)
 
     try {
       // LangChain RAG 엔드포인트 호출
-      const response = await fetch(`${API_URL}/api/chain`, {
+      const response = await fetch(`${API_URL}/api/products`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -132,6 +132,40 @@ export const chatAPI = {
       throw new Error(`HTTP ${response.status}`)
     }
     return response.json()
+  },
+
+  async recommendProducts(message: string, data?: Record<string, any>): Promise<any> {
+    const requestData = {
+      message: message,
+      ...data
+    }
+    console.log('Sending product recommendation request to:', `${API_URL}/api/v1/admin/products/recommend`)
+    console.log('Request body:', requestData)
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/admin/products/recommend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      })
+
+      console.log('Response status:', response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Error response:', errorText)
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+
+      const result = await response.json()
+      console.log('Response data:', result)
+      return result
+    } catch (error) {
+      console.error('Fetch error:', error)
+      throw error
+    }
   },
 }
 

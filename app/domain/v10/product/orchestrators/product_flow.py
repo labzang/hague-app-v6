@@ -1,4 +1,4 @@
-"""주문(Order) 오케스트레이터 플로우.
+"""상품(Product) 오케스트레이터 플로우.
 
 규칙 기반과 정책 기반 처리를 분기합니다.
 """
@@ -7,20 +7,20 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from app.domain.admin.services.order_service import OrderService
-from app.domain.admin.agents.order_agent import OrderAgent
+from app.domain.admin.services.product_service import ProductService
+from app.domain.admin.agents.product_agent import ProductAgent
 
 logger = logging.getLogger(__name__)
 
 
-class OrderFlow:
-    """주문 처리 플로우 오케스트레이터.
+class ProductFlow:
+    """상품 처리 플로우 오케스트레이터.
 
     규칙 기반(Service)과 정책 기반(Agent) 처리를 분기합니다.
     """
 
     def __init__(self):
-        """OrderFlow 초기화."""
+        """ProductFlow 초기화."""
         self.service = None
         self.agent = None
         self.adapter_path = None
@@ -31,12 +31,12 @@ class OrderFlow:
         try:
             # 프로젝트 루트 기준으로 어댑터 경로 설정
             project_root = Path(__file__).parent.parent.parent.parent.parent
-            adapter_base_path = project_root / "artifacts" / "fine-tuned-adapters" / "customer-service"
+            adapter_base_path = project_root / "artifacts" / "fine-tuned-adapters" / "product-service"
 
-            # customer-service 어댑터 경로 찾기 (주문 처리도 customer-service 어댑터 사용)
+            # product-service 어댑터 경로 찾기
             if adapter_base_path.exists():
                 # 가장 최근 실행 디렉토리 찾기
-                lora_path = adapter_base_path / "customer_service" / "lora"
+                lora_path = adapter_base_path / "product_service" / "lora"
                 if lora_path.exists():
                     # run_* 디렉토리 중 가장 최근 것 찾기
                     run_dirs = sorted(
@@ -46,7 +46,7 @@ class OrderFlow:
                     )
                     if run_dirs:
                         self.adapter_path = run_dirs[0]
-                        logger.info(f"[어댑터] Customer Service 어댑터 경로: {self.adapter_path}")
+                        logger.info(f"[어댑터] Product Service 어댑터 경로: {self.adapter_path}")
                     else:
                         # fixed_model 또는 manual_adapter 사용
                         fixed_model = lora_path / "fixed_model"
@@ -64,15 +64,15 @@ class OrderFlow:
         self,
         action: str,
         data: Optional[Dict[str, Any]] = None,
-        order_id: Optional[int] = None,
+        product_id: Optional[int] = None,
         use_policy: bool = False
     ) -> Dict[str, Any]:
         """요청을 처리합니다.
 
         Args:
-            action: 수행할 액션 (create, update, get, list, delete, cancel)
+            action: 수행할 액션 (create, update, get, list, delete, recommend)
             data: 요청 데이터
-            order_id: 주문 ID
+            product_id: 상품 ID
             use_policy: True면 정책 기반(Agent), False면 규칙 기반(Service)
 
         Returns:
@@ -82,53 +82,44 @@ class OrderFlow:
 
         if use_policy:
             # 정책 기반 처리 (Agent)
-            return await self._process_with_agent(action, data, order_id)
+            return await self._process_with_agent(action, data, product_id)
         else:
             # 규칙 기반 처리 (Service)
-            return await self._process_with_service(action, data, order_id)
+            return await self._process_with_service(action, data, product_id)
 
     async def _process_with_service(
         self,
         action: str,
         data: Optional[Dict[str, Any]],
-        order_id: Optional[int]
+        product_id: Optional[int]
     ) -> Dict[str, Any]:
         """규칙 기반 서비스로 처리."""
         logger.info(f"[서비스] 규칙 기반 처리 - action: {action}")
 
         if self.service is None:
-            self.service = OrderService()
+            self.service = ProductService()
 
         try:
             if action == "create":
-                return await self.service.create_order(data or {})
+                return await self.service.create_product(data or {})
             elif action == "update":
-                if order_id is None:
-                    raise ValueError("order_id가 필요합니다")
-                return await self.service.update_order(order_id, data or {})
+                if product_id is None:
+                    raise ValueError("product_id가 필요합니다")
+                return await self.service.update_product(product_id, data or {})
             elif action == "get":
-                if order_id is None:
-                    raise ValueError("order_id가 필요합니다")
-                return await self.service.get_order(order_id)
+                if product_id is None:
+                    raise ValueError("product_id가 필요합니다")
+                return await self.service.get_product(product_id)
             elif action == "list":
                 limit = data.get("limit", 100) if data else 100
                 offset = data.get("offset", 0) if data else 0
-                consumer_id = data.get("consumer_id") if data else None
-                status = data.get("status") if data else None
-                return await self.service.list_orders(
-                    limit=limit,
-                    offset=offset,
-                    consumer_id=consumer_id,
-                    status=status
-                )
+                return await self.service.list_products(limit=limit, offset=offset)
             elif action == "delete":
-                if order_id is None:
-                    raise ValueError("order_id가 필요합니다")
-                return await self.service.delete_order(order_id)
-            elif action == "cancel":
-                if order_id is None:
-                    raise ValueError("order_id가 필요합니다")
-                return await self.service.cancel_order(order_id)
+                if product_id is None:
+                    raise ValueError("product_id가 필요합니다")
+                return await self.service.delete_product(product_id)
+            elif action == "recommend":
+                return await self.service.recommend_products(data or {})
             else:
                 raise ValueError(f"지원하지 않는 액션: {action}")
         except Exception as e:
@@ -139,23 +130,23 @@ class OrderFlow:
         self,
         action: str,
         data: Optional[Dict[str, Any]],
-        order_id: Optional[int]
+        product_id: Optional[int]
     ) -> Dict[str, Any]:
         """정책 기반 에이전트로 처리."""
         logger.info(f"[에이전트] 정책 기반 처리 - action: {action}")
 
         if self.agent is None:
-            self.agent = OrderAgent(adapter_path=self.adapter_path)
+            self.agent = ProductAgent(adapter_path=self.adapter_path)
 
         try:
             # 에이전트에 컨텍스트 전달
             context = {
                 "action": action,
                 "data": data or {},
-                "order_id": order_id,
+                "product_id": product_id,
             }
 
-            task = f"주문 {action} 작업을 수행하세요"
+            task = f"상품 {action} 작업을 수행하세요"
             result = await self.agent.execute(task, context)
             return result
         except Exception as e:
