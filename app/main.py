@@ -245,12 +245,12 @@ if str(project_root) not in sys.path:
 
 # Soccer player 라우터를 먼저 등록 (다른 라우터와 독립적으로)
 try:
-    from app.api.v10.soccer import player_router as soccer_player_router
+    from app.api.v10.soccer.player_router import router as soccer_player_router
     api_v10_soccer_prefix = "/api/v10/soccer"
     player_router_prefix = api_v10_soccer_prefix + "/player"
 
     app.include_router(
-        soccer_player_router.router,
+        soccer_player_router,
         prefix=player_router_prefix,
         tags=["soccer", "player"]
     )

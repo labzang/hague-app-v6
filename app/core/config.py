@@ -51,15 +51,17 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _sanitize_database_url(raw_url: str) -> str:
-        """psycopg2용으로 DATABASE_URL을 정리.
+        """데이터베이스 URL을 정리.
 
         - `channel_binding` 등 psycopg2가 인식하지 못하는 옵션을 제거합니다.
+        - `sslmode`는 asyncpg가 지원하지 않으므로 제거합니다.
         """
         parsed = urlparse(raw_url)
         query = dict(parse_qsl(parsed.query))
 
-        # psycopg2에서 문제를 일으킬 수 있는 옵션 제거
+        # psycopg2/asyncpg에서 문제를 일으킬 수 있는 옵션 제거
         query.pop("channel_binding", None)
+        query.pop("sslmode", None)  # asyncpg는 sslmode를 지원하지 않음
 
         sanitized = parsed._replace(query=urlencode(query))
         return urlunparse(sanitized)

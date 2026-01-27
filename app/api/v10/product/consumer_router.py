@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from app.domain.v10.product.models.consumer_model import (
+from app.domain.v10.product.models.transfers.consumer_model import (
     ConsumerModel,
     ConsumerCreateModel,
     ConsumerUpdateModel,

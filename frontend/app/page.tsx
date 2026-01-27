@@ -18,10 +18,10 @@ export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const menuItems = [
-    { href: '/v1/main', label: 'V1 Main' },
-    { href: '/v1/admin', label: 'V1 Admin' },
-    { href: '/v10/main', label: 'V10 Main' },
-    { href: '/v10/admin', label: 'V10 Admin' },
+    { href: '/v1/main', label: '개인 프로젝트 메인' },
+    { href: '/v1/admin', label: '개인 프로젝트 어드민' },
+    { href: '/v10/main', label: '축구 프로젝트 메인' },
+    { href: '/v10/admin', label: '개인 프로젝트 어드민' },
   ]
 
   return (

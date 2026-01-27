@@ -193,64 +193,55 @@ class PlayerOrchestrator:
     def _determine_strategy_type(self, items: List[Dict[str, Any]]) -> str:
         """선수 데이터를 분석하여 정책기반/규칙기반을 판단합니다.
 
+        휴리스틱 기반 판단:
+        - 데이터베이스 삽입 작업은 항상 규칙 기반으로 처리
+        - 복잡한 데이터 변환이나 정책 결정이 필요한 경우만 정책 기반
+
         Args:
             items: 선수 데이터 리스트
 
         Returns:
             "policy" 또는 "rule"
         """
-        if not self.model or not self.tokenizer:
-            # 모델이 없으면 기본적으로 규칙 기반 사용
-            logger.info("[판단] 모델 없음, 규칙 기반 선택")
-            return "rule"
+        # 휴리스틱 1: 데이터베이스 삽입 작업은 항상 규칙 기반
+        # JSONL 데이터를 players 테이블에 추가하는 것은 규칙 기반 처리
+        logger.info("[판단] 데이터베이스 삽입 작업은 규칙 기반으로 처리")
+        return "rule"
 
-        try:
-            # 데이터를 텍스트로 변환하여 모델에 입력
-            # 간단한 휴리스틱: 데이터의 복잡도와 null 값 비율을 기반으로 판단
-            total_fields = 0
-            null_fields = 0
-            complex_fields = 0
-
-            for item in items[:10]:  # 최대 10개 샘플만 확인
-                for key, value in item.items():
-                    total_fields += 1
-                    if value is None:
-                        null_fields += 1
-                    elif isinstance(value, (dict, list)):
-                        complex_fields += 1
-
-            null_ratio = null_fields / total_fields if total_fields > 0 else 0
-            complexity_ratio = complex_fields / total_fields if total_fields > 0 else 0
-
-            # 데이터를 텍스트로 변환
-            sample_text = json.dumps(items[0] if items else {}, ensure_ascii=False)
-            sample_text = sample_text[:512]  # 최대 길이 제한
-
-            # 모델로 분류
-            inputs = self.tokenizer(
-                sample_text,
-                return_tensors="pt",
-                truncation=True,
-                max_length=512,
-                padding=True,
-            )
-
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                logits = outputs.logits if hasattr(outputs, "logits") else outputs.last_hidden_state
-
-            # 간단한 휴리스틱: null 비율이 낮고 복잡도가 높으면 정책 기반
-            # 실제로는 fine-tuned 모델이 필요하지만, 여기서는 휴리스틱 사용
-            if null_ratio < 0.2 and complexity_ratio > 0.1:
-                logger.info("[판단] 정책 기반 선택 (복잡한 데이터)")
-                return "policy"
-            else:
-                logger.info("[판단] 규칙 기반 선택 (단순한 데이터)")
-                return "rule"
-
-        except Exception as e:
-            logger.error(f"[판단] 오류 발생, 규칙 기반 사용: {e}", exc_info=True)
-            return "rule"
+        # 향후 확장: 복잡한 데이터 변환이나 정책 결정이 필요한 경우
+        # 아래 로직을 활성화하여 정책 기반으로 처리 가능
+        # try:
+        #     # 데이터 품질 및 복잡도 분석
+        #     total_fields = 0
+        #     null_fields = 0
+        #     complex_fields = 0
+        #     requires_validation = False
+        #
+        #     for item in items[:10]:  # 최대 10개 샘플만 확인
+        #         for key, value in item.items():
+        #             total_fields += 1
+        #             if value is None:
+        #                 null_fields += 1
+        #             elif isinstance(value, (dict, list)):
+        #                 complex_fields += 1
+        #             # 모호한 필드나 정책 결정이 필요한 경우 체크
+        #             if key in ["nickname", "e_player_name"] and value:
+        #                 requires_validation = True
+        #
+        #     null_ratio = null_fields / total_fields if total_fields > 0 else 0
+        #     complexity_ratio = complex_fields / total_fields if total_fields > 0 else 0
+        #
+        #     # 정책 기반이 필요한 경우 (예: 복잡한 검증, 데이터 보강 등)
+        #     if requires_validation and null_ratio < 0.3:
+        #         logger.info("[판단] 정책 기반 선택 (복잡한 검증 필요)")
+        #         return "policy"
+        #     else:
+        #         logger.info("[판단] 규칙 기반 선택 (단순한 데이터 삽입)")
+        #         return "rule"
+        #
+        # except Exception as e:
+        #     logger.error(f"[판단] 오류 발생, 규칙 기반 사용: {e}", exc_info=True)
+        #     return "rule"
 
     async def process_players(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """선수 데이터를 처리합니다.
@@ -263,6 +254,14 @@ class PlayerOrchestrator:
         Returns:
             처리 결과 딕셔너리
         """
+        logger.info(f"[오케스트레이터] 라우터로부터 {len(items)}개 항목 수신")
+
+        # 상위 5개 데이터 출력
+        logger.info("[오케스트레이터] 수신된 데이터 상위 5개 출력:")
+        top_five_items = items[:5]
+        for idx, item in enumerate(top_five_items, start=1):
+            logger.info(f"  [오케스트레이터 {idx}] {json.dumps(item, ensure_ascii=False, indent=2)}")
+
         logger.info(f"[오케스트레이터] {len(items)}개 항목 처리 시작")
 
         # 전략 타입 판단

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { ArrowLeft, Upload, X, CheckCircle2, AlertCircle, Loader2, Users, Building2, MapPin, Calendar } from 'lucide-react'
+import { ArrowLeft, Upload, X, CheckCircle2, AlertCircle, Loader2, Building2, Shield, User, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -24,10 +24,10 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-    { id: 'player', label: '선수', icon: Users },
-    { id: 'team', label: '팀', icon: Building2 },
-    { id: 'stadium', label: '스타디움', icon: MapPin },
-    { id: 'schedule', label: '스케줄', icon: Calendar },
+    { id: 'stadium', label: '경기장', icon: Building2 },
+    { id: 'team', label: '팀', icon: Shield },
+    { id: 'player', label: '선수', icon: User },
+    { id: 'schedule', label: '경기 일정', icon: Calendar },
 ]
 
 /**

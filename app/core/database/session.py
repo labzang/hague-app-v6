@@ -31,6 +31,30 @@ def create_database_engine():
                 "check_same_thread": False,
             },
         })
+    elif "postgresql+asyncpg" in database_url:
+        # asyncpg를 위한 SSL 설정
+        # Neon 등 외부 PostgreSQL은 일반적으로 SSL이 필요함
+        # URL에 neon이 포함되어 있거나 특정 호스트인 경우 SSL 활성화
+        import ssl
+        from urllib.parse import urlparse
+
+        parsed = urlparse(database_url)
+        hostname = parsed.hostname or ""
+
+        # Neon 또는 외부 호스트인 경우 SSL 활성화
+        needs_ssl = (
+            "neon" in hostname.lower() or
+            "amazonaws.com" in hostname.lower() or
+            "azure.com" in hostname.lower() or
+            hostname.endswith(".com")  # 일반적인 외부 호스트
+        )
+
+        if needs_ssl:
+            engine_kwargs.update({
+                "connect_args": {
+                    "ssl": ssl.create_default_context()
+                }
+            })
 
     return create_async_engine(database_url, **engine_kwargs)
 

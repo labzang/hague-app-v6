@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 import json
 
-from app.domain.v10.product.models.product_model import (
+from app.domain.v10.product.models.transfers.product_model import (
     ProductModel,
     ProductCreateModel,
     ProductUpdateModel,

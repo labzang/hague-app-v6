@@ -34,10 +34,10 @@ def get_url():
 # 모델들이 사용하는 Base를 import (모델과 동일한 Base 사용)
 # 모델들이 Base.metadata에 등록되도록 import 필수
 from app.domain.shared.bases import Base
-from app.domain.v10.soccer.bases.players import Player
-from app.domain.v10.soccer.bases.teams import Team
-from app.domain.v10.soccer.bases.schedules import Schedule
-from app.domain.v10.soccer.bases.stadiums import Stadium
+from app.domain.v10.soccer.models.bases.players import Player
+from app.domain.v10.soccer.models.bases.teams import Team
+from app.domain.v10.soccer.models.bases.schedules import Schedule
+from app.domain.v10.soccer.models.bases.stadiums import Stadium
 
 # add your model's MetaData object here
 # for 'autogenerate' support

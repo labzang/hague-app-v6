@@ -4,6 +4,7 @@ JSONL 파일을 multipart/form-data로 받아서 처리합니다.
 """
 import json
 import logging
+from datetime import date, datetime
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -28,6 +29,27 @@ def get_orchestrator() -> PlayerOrchestrator:
     if _orchestrator is None:
         _orchestrator = PlayerOrchestrator()
     return _orchestrator
+
+
+def serialize_for_json(obj: Any) -> Any:
+    """JSON 직렬화를 위해 date/datetime 객체를 문자열로 변환합니다.
+
+    Args:
+        obj: 직렬화할 객체
+
+    Returns:
+        JSON 직렬화 가능한 객체
+    """
+    if isinstance(obj, date):
+        return obj.isoformat()
+    elif isinstance(obj, datetime):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {key: serialize_for_json(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_for_json(item) for item in obj]
+    else:
+        return obj
 
 
 @router.post("/upload")
@@ -63,6 +85,12 @@ async def upload_player_jsonl(
         text_content = contents.decode('utf-8')
         logger.info("[선수 업로드] 파일 디코딩 완료")
 
+        # 원본 JSONL 데이터 출력 (처음 5줄만)
+        logger.info("[라우터] Next.js에서 전송된 JSONL 원본 데이터 (상위 5줄):")
+        lines_preview = text_content.strip().split('\n')[:5]
+        for idx, line in enumerate(lines_preview, start=1):
+            logger.info(f"  [원본 {idx}] {line[:200]}..." if len(line) > 200 else f"  [원본 {idx}] {line}")
+
         # JSONL 파싱 (각 줄이 JSON 객체)
         items: List[Dict[str, Any]] = []
         lines = text_content.strip().split('\n')
@@ -84,16 +112,17 @@ async def upload_player_jsonl(
         # 첫 5개 행만 추출 (로그용)
         first_five_items = items[:5]
 
-        # 로그 출력
-        logger.info(f"[선수 업로드 성공] 파일명: {file.filename}, 총 {len(items)}개 항목")
-        logger.info(f"[선수 업로드] 첫 5개 행 출력:")
+        # 파싱된 데이터 출력
+        logger.info(f"[라우터] 파싱 완료 - 파일명: {file.filename}, 총 {len(items)}개 항목")
+        logger.info("[라우터] 파싱된 JSON 데이터 (상위 5개):")
         for idx, item in enumerate(first_five_items, start=1):
-            logger.info(f"  [{idx}] {json.dumps(item, ensure_ascii=False, indent=2)}")
+            logger.info(f"  [파싱 {idx}] {json.dumps(item, ensure_ascii=False, indent=2)}")
 
-        # 오케스트레이터를 통해 처리
-        logger.info("[선수 업로드] 오케스트레이터로 처리 시작...")
+        # 오케스트레이터로 데이터 전달
+        logger.info(f"[라우터] 오케스트레이터로 {len(items)}개 항목 전달 시작...")
         orchestrator = get_orchestrator()
         processing_result = await orchestrator.process_players(items)
+        logger.info("[라우터] 오케스트레이터 처리 완료")
 
         response_data = {
             "success": True,
@@ -104,6 +133,9 @@ async def upload_player_jsonl(
             "file_size": len(contents),
             "processing_result": processing_result,
         }
+
+        # JSON 직렬화를 위해 date/datetime 객체를 문자열로 변환
+        response_data = serialize_for_json(response_data)
 
         logger.info(f"[선수 업로드] 응답 준비 완료")
         return JSONResponse(

@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.domain.v10.product.bases.consumers import Consumer
-from app.domain.v10.product.models.consumer_model import (
+from app.domain.v10.product.models.transfers.consumer_model import (
     ConsumerModel,
     ConsumerCreateModel,
     ConsumerUpdateModel,
