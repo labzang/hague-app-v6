@@ -1,100 +1,26 @@
 """선수 데이터 처리 오케스트레이터.
 
-GoF 전략 패턴을 사용하여 정책기반/규칙기반 처리를 분기합니다.
+LangGraph StateGraph를 사용하여 정책기반/규칙기반 처리를 분기합니다.
 """
 import json
 import logging
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 
-try:
-    import torch
-    from transformers import AutoModelForSequenceClassification, AutoTokenizer
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-    logging.warning("transformers가 설치되지 않았습니다.")
+from langgraph.graph import StateGraph, END, START
 
+from app.core.langsmith_config import get_langsmith_config
+from app.domain.v10.soccer.models.states.player_state import PlayerProcessingState
 from app.domain.v10.soccer.spokes.agents.player_agent import PlayerAgent
 from app.domain.v10.soccer.spokes.services.player_service import PlayerService
 
 logger = logging.getLogger(__name__)
 
 
-class PlayerProcessingStrategy(ABC):
-    """선수 데이터 처리 전략 인터페이스."""
-
-    @abstractmethod
-    async def process(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """선수 데이터를 처리합니다.
-
-        Args:
-            items: 처리할 선수 데이터 리스트
-
-        Returns:
-            처리 결과 딕셔너리
-        """
-        pass
-
-
-class PolicyBasedStrategy(PlayerProcessingStrategy):
-    """정책 기반 처리 전략.
-
-    PlayerAgent를 사용하여 정책 기반 처리를 수행합니다.
-    """
-
-    def __init__(self):
-        """PolicyBasedStrategy 초기화."""
-        self.agent = PlayerAgent()
-        logger.info("[전략] 정책 기반 전략 초기화 완료")
-
-    async def process(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """정책 기반으로 선수 데이터를 처리합니다.
-
-        Args:
-            items: 처리할 선수 데이터 리스트
-
-        Returns:
-            처리 결과 딕셔너리
-        """
-        logger.info(f"[정책 기반] {len(items)}개 항목 처리 시작")
-        result = await self.agent.process_players(items)
-        logger.info("[정책 기반] 처리 완료")
-        return result
-
-
-class RuleBasedStrategy(PlayerProcessingStrategy):
-    """규칙 기반 처리 전략.
-
-    PlayerService를 사용하여 규칙 기반 처리를 수행합니다.
-    """
-
-    def __init__(self):
-        """RuleBasedStrategy 초기화."""
-        self.service = PlayerService()
-        logger.info("[전략] 규칙 기반 전략 초기화 완료")
-
-    async def process(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """규칙 기반으로 선수 데이터를 처리합니다.
-
-        Args:
-            items: 처리할 선수 데이터 리스트
-
-        Returns:
-            처리 결과 딕셔너리
-        """
-        logger.info(f"[규칙 기반] {len(items)}개 항목 처리 시작")
-        result = await self.service.process_players(items)
-        logger.info("[규칙 기반] 처리 완료")
-        return result
-
-
 class PlayerOrchestrator:
     """선수 데이터 처리 오케스트레이터.
 
-    KoELECTRA 모델을 사용하여 정책기반/규칙기반을 판단하고
-    적절한 전략을 선택하여 처리합니다.
+    LangGraph StateGraph를 사용하여 데이터 처리 흐름을 관리합니다.
     """
 
     def __init__(
@@ -104,20 +30,18 @@ class PlayerOrchestrator:
         """PlayerOrchestrator 초기화.
 
         Args:
-            model_dir: KoELECTRA 모델 디렉토리 경로
+            model_dir: KoELECTRA 모델 디렉토리 경로 (향후 사용 예정)
         """
-        self.model = None
-        self.tokenizer = None
         self.model_dir = model_dir or self._get_default_model_dir()
 
-        # 전략 인스턴스 생성
-        self.policy_strategy = PolicyBasedStrategy()
-        self.rule_strategy = RuleBasedStrategy()
+        # Agent와 Service 인스턴스 생성
+        self.agent = PlayerAgent()
+        self.service = PlayerService()
 
-        if TRANSFORMERS_AVAILABLE:
-            self._load_model()
-        else:
-            logger.warning("[오케스트레이터] transformers 미설치, 기본 규칙 기반 사용")
+        # LangGraph 그래프 빌드
+        self.graph = self._build_graph()
+
+        logger.info("[오케스트레이터] PlayerOrchestrator 초기화 완료 (LangGraph)")
 
     def _get_default_model_dir(self) -> Path:
         """기본 모델 디렉토리 경로를 반환합니다.
@@ -125,128 +49,237 @@ class PlayerOrchestrator:
         Returns:
             모델 디렉토리 Path
         """
-        # 프로젝트 루트 기준으로 artifacts 폴더 찾기
         current_file = Path(__file__)
-        # app/domain/v10/soccer/hub/orchestrators/player_orchestrator.py
-        # -> artifacts/models--monologg--koelectra-small-v3-discriminator
         project_root = current_file.parent.parent.parent.parent.parent.parent
         model_dir = project_root / "artifacts" / "models--monologg--koelectra-small-v3-discriminator"
         return model_dir
 
-    def _load_model(self):
-        """KoELECTRA 모델과 토크나이저를 로드합니다."""
-        if not self.model_dir.exists():
-            logger.warning(
-                f"[오케스트레이터] 모델 디렉토리를 찾을 수 없습니다: {self.model_dir}. "
-                "기본 규칙 기반 사용"
-            )
-            return
-
-        try:
-            logger.info(f"[오케스트레이터] 모델 로딩 시작: {self.model_dir}")
-
-            # snapshots 폴더에서 최신 스냅샷 찾기
-            snapshots_dir = self.model_dir / "snapshots"
-            if snapshots_dir.exists():
-                snapshots = list(snapshots_dir.iterdir())
-                if snapshots:
-                    # 가장 최근 스냅샷 사용 (일반적으로 해시 이름)
-                    latest_snapshot = max(snapshots, key=lambda p: p.stat().st_mtime)
-                    model_path = latest_snapshot
-                    logger.info(f"[오케스트레이터] 스냅샷 사용: {model_path}")
-                else:
-                    model_path = self.model_dir
-            else:
-                model_path = self.model_dir
-
-            # 토크나이저 로드
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                str(model_path),
-                local_files_only=True,
-            )
-
-            # 모델 로드 (SequenceClassification용)
-            # discriminator 모델이므로 분류 작업에 사용
-            try:
-                self.model = AutoModelForSequenceClassification.from_pretrained(
-                    str(model_path),
-                    local_files_only=True,
-                )
-            except Exception:
-                # SequenceClassification이 없으면 일반 모델 사용
-                from transformers import AutoModel
-                self.model = AutoModel.from_pretrained(
-                    str(model_path),
-                    local_files_only=True,
-                )
-
-            # 평가 모드로 설정
-            self.model.eval()
-
-            logger.info("[오케스트레이터] 모델 로딩 완료")
-
-        except Exception as e:
-            logger.error(f"[오케스트레이터] 모델 로딩 실패: {e}", exc_info=True)
-            self.model = None
-            self.tokenizer = None
-
-    def _determine_strategy_type(self, items: List[Dict[str, Any]]) -> str:
-        """선수 데이터를 분석하여 정책기반/규칙기반을 판단합니다.
-
-        휴리스틱 기반 판단:
-        - 데이터베이스 삽입 작업은 항상 규칙 기반으로 처리
-        - 복잡한 데이터 변환이나 정책 결정이 필요한 경우만 정책 기반
-
-        Args:
-            items: 선수 데이터 리스트
+    def _build_graph(self) -> StateGraph:
+        """LangGraph StateGraph를 빌드합니다.
 
         Returns:
-            "policy" 또는 "rule"
+            컴파일된 StateGraph
         """
-        # 휴리스틱 1: 데이터베이스 삽입 작업은 항상 규칙 기반
-        # JSONL 데이터를 players 테이블에 추가하는 것은 규칙 기반 처리
-        logger.info("[판단] 데이터베이스 삽입 작업은 규칙 기반으로 처리")
-        return "rule"
+        graph = StateGraph(PlayerProcessingState)
+
+        # 노드 추가
+        graph.add_node("validate", self._validate_node)
+        graph.add_node("determine_strategy", self._determine_strategy_node)
+        graph.add_node("policy_process", self._policy_process_node)
+        graph.add_node("rule_process", self._rule_process_node)
+        graph.add_node("finalize", self._finalize_node)
+
+        # 엣지 추가
+        graph.add_edge(START, "validate")
+        graph.add_edge("validate", "determine_strategy")
+        graph.add_conditional_edges(
+            "determine_strategy",
+            self._route_strategy,
+            {
+                "policy": "policy_process",
+                "rule": "rule_process",
+            }
+        )
+        graph.add_edge("policy_process", "finalize")
+        graph.add_edge("rule_process", "finalize")
+        graph.add_edge("finalize", END)
+
+        return graph.compile()
+
+    async def _validate_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
+        """데이터 검증 노드.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            업데이트할 상태 딕셔너리
+        """
+        logger.info(f"[검증 노드] {len(state.get('items', []))}개 항목 검증 시작")
+
+        items = state.get("items", [])
+        validation_errors = []
+
+        # 기본 검증: 빈 리스트 체크
+        if not items:
+            validation_errors.append({
+                "error": "데이터가 비어있습니다",
+                "level": "warning"
+            })
+
+        # 각 항목의 기본 필수 필드 검증
+        for idx, item in enumerate(items[:10]):  # 최대 10개만 샘플링
+            if not isinstance(item, dict):
+                validation_errors.append({
+                    "index": idx,
+                    "error": "항목이 딕셔너리 형식이 아닙니다",
+                    "level": "error"
+                })
+
+        logger.info(f"[검증 노드] 검증 완료: 오류 {len(validation_errors)}개")
+
+        return {
+            "validation_errors": validation_errors
+        }
+
+    async def _determine_strategy_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
+        """전략 판단 노드.
+
+        휴리스틱 기반으로 정책기반/규칙기반을 판단합니다.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            업데이트할 상태 딕셔너리
+        """
+        items = state.get("items", [])
+        logger.info(f"[전략 판단 노드] {len(items)}개 항목 분석 시작")
+
+        # 휴리스틱: 데이터베이스 삽입 작업은 항상 규칙 기반
+        strategy_type = "rule"
 
         # 향후 확장: 복잡한 데이터 변환이나 정책 결정이 필요한 경우
         # 아래 로직을 활성화하여 정책 기반으로 처리 가능
         # try:
-        #     # 데이터 품질 및 복잡도 분석
         #     total_fields = 0
         #     null_fields = 0
         #     complex_fields = 0
         #     requires_validation = False
         #
-        #     for item in items[:10]:  # 최대 10개 샘플만 확인
+        #     for item in items[:10]:
         #         for key, value in item.items():
         #             total_fields += 1
         #             if value is None:
         #                 null_fields += 1
         #             elif isinstance(value, (dict, list)):
         #                 complex_fields += 1
-        #             # 모호한 필드나 정책 결정이 필요한 경우 체크
         #             if key in ["nickname", "e_player_name"] and value:
         #                 requires_validation = True
         #
         #     null_ratio = null_fields / total_fields if total_fields > 0 else 0
-        #     complexity_ratio = complex_fields / total_fields if total_fields > 0 else 0
         #
-        #     # 정책 기반이 필요한 경우 (예: 복잡한 검증, 데이터 보강 등)
         #     if requires_validation and null_ratio < 0.3:
-        #         logger.info("[판단] 정책 기반 선택 (복잡한 검증 필요)")
-        #         return "policy"
-        #     else:
-        #         logger.info("[판단] 규칙 기반 선택 (단순한 데이터 삽입)")
-        #         return "rule"
-        #
+        #         strategy_type = "policy"
         # except Exception as e:
-        #     logger.error(f"[판단] 오류 발생, 규칙 기반 사용: {e}", exc_info=True)
-        #     return "rule"
+        #     logger.error(f"[전략 판단] 오류 발생, 규칙 기반 사용: {e}", exc_info=True)
+
+        logger.info(f"[전략 판단 노드] 선택된 전략: {strategy_type}")
+
+        return {
+            "strategy_type": strategy_type
+        }
+
+    def _route_strategy(self, state: PlayerProcessingState) -> Literal["policy", "rule"]:
+        """전략 라우팅 함수.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            다음 노드 이름 ("policy" 또는 "rule")
+        """
+        strategy_type = state.get("strategy_type", "rule")
+        logger.info(f"[라우팅] 전략 '{strategy_type}'로 라우팅")
+        return strategy_type  # type: ignore
+
+    async def _policy_process_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
+        """정책 기반 처리 노드.
+
+        PlayerAgent를 사용하여 정책 기반 처리를 수행합니다.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            업데이트할 상태 딕셔너리
+        """
+        items = state.get("items", [])
+        logger.info(f"[정책 처리 노드] {len(items)}개 항목 처리 시작")
+
+        try:
+            result = await self.agent.process_players(items)
+            logger.info("[정책 처리 노드] 처리 완료")
+            return {
+                "policy_result": result
+            }
+        except Exception as e:
+            logger.error(f"[정책 처리 노드] 처리 실패: {e}", exc_info=True)
+            return {
+                "policy_result": {
+                    "success": False,
+                    "error": str(e)
+                }
+            }
+
+    async def _rule_process_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
+        """규칙 기반 처리 노드.
+
+        PlayerService를 사용하여 규칙 기반 처리를 수행합니다.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            업데이트할 상태 딕셔너리
+        """
+        items = state.get("items", [])
+        logger.info(f"[규칙 처리 노드] {len(items)}개 항목 처리 시작")
+
+        try:
+            result = await self.service.process_players(items)
+            logger.info("[규칙 처리 노드] 처리 완료")
+            return {
+                "rule_result": result,
+                "db_result": result.get("database_result", {})
+            }
+        except Exception as e:
+            logger.error(f"[규칙 처리 노드] 처리 실패: {e}", exc_info=True)
+            return {
+                "rule_result": {
+                    "success": False,
+                    "error": str(e)
+                },
+                "db_result": {}
+            }
+
+    async def _finalize_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
+        """최종 결과 정리 노드.
+
+        Args:
+            state: 현재 상태
+
+        Returns:
+            업데이트할 상태 딕셔너리
+        """
+        logger.info("[최종화 노드] 결과 정리 시작")
+
+        strategy_type = state.get("strategy_type", "rule")
+
+        # 전략에 따라 결과 선택
+        if strategy_type == "policy":
+            result = state.get("policy_result", {})
+        else:
+            result = state.get("rule_result", {})
+
+        # 최종 결과 구성
+        final_result = {
+            **result,
+            "strategy_used": strategy_type,
+            "total_items": len(state.get("items", [])),
+            "validation_errors_count": len(state.get("validation_errors", []))
+        }
+
+        logger.info(f"[최종화 노드] 결과 정리 완료: 전략={strategy_type}")
+
+        return {
+            "final_result": final_result
+        }
 
     async def process_players(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """선수 데이터를 처리합니다.
 
-        정책기반/규칙기반을 판단하여 적절한 전략을 선택합니다.
+        LangGraph StateGraph를 실행하여 데이터를 처리합니다.
 
         Args:
             items: 처리할 선수 데이터 리스트
@@ -262,23 +295,37 @@ class PlayerOrchestrator:
         for idx, item in enumerate(top_five_items, start=1):
             logger.info(f"  [오케스트레이터 {idx}] {json.dumps(item, ensure_ascii=False, indent=2)}")
 
-        logger.info(f"[오케스트레이터] {len(items)}개 항목 처리 시작")
+        # 초기 상태 구성
+        initial_state: PlayerProcessingState = {
+            "items": items,
+            "validation_errors": [],
+            "strategy_type": "",
+            "normalized_items": [],
+            "policy_result": {},
+            "rule_result": {},
+            "db_result": {},
+            "final_result": {}
+        }
 
-        # 전략 타입 판단
-        strategy_type = self._determine_strategy_type(items)
-        logger.info(f"[오케스트레이터] 선택된 전략: {strategy_type}")
+        # LangGraph 실행 (LangSmith 추적 포함)
+        logger.info(f"[오케스트레이터] LangGraph 실행 시작: {len(items)}개 항목")
 
-        # 전략 선택 및 실행
-        if strategy_type == "policy":
-            strategy = self.policy_strategy
-        else:
-            strategy = self.rule_strategy
+        # LangSmith config 가져오기
+        langsmith_config = get_langsmith_config()
+        if langsmith_config:
+            logger.info("[오케스트레이터] LangSmith 추적 활성화")
+            # LangSmith config에 도메인별 메타데이터 추가
+            langsmith_config["metadata"]["domain"] = "player"
+            langsmith_config["metadata"]["item_count"] = len(items)
+            langsmith_config["tags"].append("player-processing")
 
-        result = await strategy.process(items)
+        final_state = await self.graph.ainvoke(
+            initial_state,
+            config=langsmith_config
+        )
 
-        # 결과에 전략 정보 추가
-        result["strategy_used"] = strategy_type
-        result["total_items"] = len(items)
+        # 최종 결과 추출
+        result = final_state.get("final_result", {})
 
-        logger.info(f"[오케스트레이터] 처리 완료: {strategy_type} 전략 사용")
+        logger.info(f"[오케스트레이터] LangGraph 실행 완료: 전략={final_state.get('strategy_type', 'unknown')}")
         return result

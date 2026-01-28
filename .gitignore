@@ -55,3 +55,6 @@ deploy_key
 deploy_key.pub
 ec2_deploy_key
 ec2_deploy_key.pub
+
+artifacts/*
+artifacts-training/**

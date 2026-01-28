@@ -114,3 +114,9 @@ class Schedule(Base):
         foreign_keys=[awayteam_id],
         backref="away_schedules"
     )
+
+    embeddings = relationship(
+        "ScheduleEmbedding",
+        back_populates="schedule",
+        cascade="all, delete-orphan"
+    )

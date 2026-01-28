@@ -114,3 +114,9 @@ class Player(Base):
         "Team",
         back_populates="players"
     )
+
+    embeddings = relationship(
+        "PlayerEmbedding",
+        back_populates="player",
+        cascade="all, delete-orphan"
+    )

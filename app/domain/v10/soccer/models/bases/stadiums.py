@@ -12,7 +12,7 @@ class Stadium(Base):
     Attributes:
         id: 경기장 고유 식별자 (PK, BigInt)
         stadium_code: 경기장 코드
-        statdium_name: 경기장 이름 (오타 포함, ERD 기준)
+        stadium_name: 경기장 이름
         hometeam_code: 홈팀 코드
         seat_count: 좌석 수
         address: 주소
@@ -36,7 +36,7 @@ class Stadium(Base):
         comment="경기장 코드"
     )
 
-    statdium_name = Column(
+    stadium_name = Column(
         String(40),
         nullable=True,
         comment="경기장 이름"
@@ -81,4 +81,10 @@ class Stadium(Base):
     schedules = relationship(
         "Schedule",
         back_populates="stadium"
+    )
+
+    embeddings = relationship(
+        "StadiumEmbedding",
+        back_populates="stadium",
+        cascade="all, delete-orphan"
     )

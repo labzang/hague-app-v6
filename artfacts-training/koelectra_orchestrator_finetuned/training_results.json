@@ -1,0 +1,28 @@
+{
+  "train_loss": 0.8441857231987847,
+  "eval_metrics": {
+    "eval_loss": 0.6489059925079346,
+    "eval_accuracy": 1.0,
+    "eval_precision": 1.0,
+    "eval_recall": 1.0,
+    "eval_f1": 1.0,
+    "eval_BLOCK_precision": 1.0,
+    "eval_BLOCK_recall": 1.0,
+    "eval_BLOCK_f1": 1.0,
+    "eval_POLICY_BASED_precision": 1.0,
+    "eval_POLICY_BASED_recall": 1.0,
+    "eval_POLICY_BASED_f1": 1.0,
+    "eval_RULE_BASED_precision": 1.0,
+    "eval_RULE_BASED_recall": 1.0,
+    "eval_RULE_BASED_f1": 1.0,
+    "eval_runtime": 0.8746,
+    "eval_samples_per_second": 140.642,
+    "eval_steps_per_second": 9.147,
+    "epoch": 9.0
+  },
+  "label_distribution": {
+    "2": 304,
+    "1": 184,
+    "0": 126
+  }
+}

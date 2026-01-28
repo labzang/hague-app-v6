@@ -38,6 +38,12 @@ from app.domain.v10.soccer.models.bases.players import Player
 from app.domain.v10.soccer.models.bases.teams import Team
 from app.domain.v10.soccer.models.bases.schedules import Schedule
 from app.domain.v10.soccer.models.bases.stadiums import Stadium
+from app.domain.v10.soccer.models.bases.embeddings import (
+    PlayerEmbedding,
+    ScheduleEmbedding,
+    StadiumEmbedding,
+    TeamEmbedding,
+)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

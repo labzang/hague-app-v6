@@ -31,6 +31,7 @@ torch>=2.0.0
 
 # LangGraph 및 멀티 에이전트
 langgraph>=0.1.0
+langsmith>=0.1.0
 
 # PEFT (Parameter Efficient Fine-Tuning)
 peft>=0.7.0

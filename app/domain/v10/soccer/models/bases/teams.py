@@ -134,3 +134,9 @@ class Team(Base):
         back_populates="team",
         cascade="all, delete-orphan"
     )
+
+    embeddings = relationship(
+        "TeamEmbedding",
+        back_populates="team",
+        cascade="all, delete-orphan"
+    )

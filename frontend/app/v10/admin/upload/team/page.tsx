@@ -126,7 +126,9 @@ export default function FileUploadPage() {
                 })
             })
 
-            xhr.open('POST', '/api/v10/admin/upload')
+            // team 타입일 때는 soccer team router로 업로드 (포트 8000)
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            xhr.open('POST', `${apiUrl}/api/v10/soccer/team/upload`)
             xhr.send(formData)
 
             await uploadPromise

@@ -21,7 +21,7 @@ export default function Home() {
     { href: '/v1/main', label: '개인 프로젝트 메인' },
     { href: '/v1/admin', label: '개인 프로젝트 어드민' },
     { href: '/v10/main', label: '축구 프로젝트 메인' },
-    { href: '/v10/admin', label: '개인 프로젝트 어드민' },
+    { href: '/v10/admin', label: '축구 프로젝트 어드민' },
   ]
 
   return (

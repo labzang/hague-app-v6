@@ -56,8 +56,15 @@ def test_neon_db_connection() -> dict:
     parsed_final = urlparse(final_url)
     masked_final = f"{parsed_final.scheme}://{parsed_final.hostname}:{parsed_final.port}{parsed_final.path}"
 
+    # psycopg2는 postgresql+asyncpg:// 형식을 이해하지 못하므로 변환 필요
+    db_url_for_psycopg2 = final_url
+    if db_url_for_psycopg2.startswith("postgresql+asyncpg://"):
+        db_url_for_psycopg2 = db_url_for_psycopg2.replace("postgresql+asyncpg://", "postgresql://", 1)
+    elif db_url_for_psycopg2.startswith("postgresql+psycopg2://"):
+        db_url_for_psycopg2 = db_url_for_psycopg2.replace("postgresql+psycopg2://", "postgresql://", 1)
+
     try:
-        conn = psycopg2.connect(settings.database_url)
+        conn = psycopg2.connect(db_url_for_psycopg2)
 
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
@@ -273,6 +280,57 @@ except Exception as player_error:
     logger.error(f"[라우터 오류] player_router 등록 실패: {player_error}")
     logger.error(traceback.format_exc())
 
+# Soccer team 라우터 등록
+try:
+    from app.api.v10.soccer.team_router import router as soccer_team_router
+    api_v10_soccer_prefix = "/api/v10/soccer"
+    team_router_prefix = api_v10_soccer_prefix + "/team"
+
+    app.include_router(
+        soccer_team_router,
+        prefix=team_router_prefix,
+        tags=["soccer", "team"]
+    )
+    logger.info(f"[라우터] team_router 등록 완료")
+    logger.info(f"[라우터] 경로: {team_router_prefix}/upload")
+except Exception as team_error:
+    logger.error(f"[라우터 오류] team_router 등록 실패: {team_error}")
+    logger.error(traceback.format_exc())
+
+# Soccer stadium 라우터 등록
+try:
+    from app.api.v10.soccer.stadium_router import router as soccer_stadium_router
+    api_v10_soccer_prefix = "/api/v10/soccer"
+    stadium_router_prefix = api_v10_soccer_prefix + "/stadium"
+
+    app.include_router(
+        soccer_stadium_router,
+        prefix=stadium_router_prefix,
+        tags=["soccer", "stadium"]
+    )
+    logger.info(f"[라우터] stadium_router 등록 완료")
+    logger.info(f"[라우터] 경로: {stadium_router_prefix}/upload")
+except Exception as stadium_error:
+    logger.error(f"[라우터 오류] stadium_router 등록 실패: {stadium_error}")
+    logger.error(traceback.format_exc())
+
+# Soccer schedule 라우터 등록
+try:
+    from app.api.v10.soccer.schedule_router import router as soccer_schedule_router
+    api_v10_soccer_prefix = "/api/v10/soccer"
+    schedule_router_prefix = api_v10_soccer_prefix + "/schedule"
+
+    app.include_router(
+        soccer_schedule_router,
+        prefix=schedule_router_prefix,
+        tags=["soccer", "schedule"]
+    )
+    logger.info(f"[라우터] schedule_router 등록 완료")
+    logger.info(f"[라우터] 경로: {schedule_router_prefix}/upload")
+except Exception as schedule_error:
+    logger.error(f"[라우터 오류] schedule_router 등록 실패: {schedule_error}")
+    logger.error(traceback.format_exc())
+
 # 다른 라우터 등록
 try:
     # Admin 라우터 등록
@@ -345,7 +403,10 @@ async def get_routes() -> dict:
     return {
         "total_routes": len(routes),
         "routes": sorted(routes, key=lambda x: x["path"]),
-        "player_routes": [r for r in routes if "player" in r["path"]]
+        "player_routes": [r for r in routes if "player" in r["path"]],
+        "stadium_routes": [r for r in routes if "stadium" in r["path"]],
+        "team_routes": [r for r in routes if "team" in r["path"]],
+        "schedule_routes": [r for r in routes if "schedule" in r["path"]],
     }
 
 

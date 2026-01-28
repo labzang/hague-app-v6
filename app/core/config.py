@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # 서버 포트
     port: int = int(os.getenv("PORT", "8000"))
 
+    # LangSmith 설정
+    langsmith_api_key: Optional[str] = os.getenv("LANGSMITH_API_KEY")
+    langchain_tracing_v2: bool = os.getenv("LANGCHAIN_TRACING_V2", "False").lower() in ("true", "1", "yes")
+    langchain_project: str = os.getenv("LANGCHAIN_PROJECT", "soccer-data-processing")
+
     @property
     def database_url(self) -> str:
         """데이터베이스 연결 문자열 반환.
@@ -133,7 +138,13 @@ if __name__ == "__main__":
     try:
         import psycopg2
         print("[테스트] 데이터베이스 연결 시도...")
-        conn = psycopg2.connect(settings.database_url)
+        # psycopg2는 postgresql+asyncpg:// 형식을 이해하지 못하므로 변환 필요
+        db_url_for_psycopg2 = settings.database_url
+        if db_url_for_psycopg2.startswith("postgresql+asyncpg://"):
+            db_url_for_psycopg2 = db_url_for_psycopg2.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif db_url_for_psycopg2.startswith("postgresql+psycopg2://"):
+            db_url_for_psycopg2 = db_url_for_psycopg2.replace("postgresql+psycopg2://", "postgresql://", 1)
+        conn = psycopg2.connect(db_url_for_psycopg2)
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
         version = cursor.fetchone()[0]
