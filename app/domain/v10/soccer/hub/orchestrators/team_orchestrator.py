@@ -5,9 +5,12 @@ LangGraph StateGraph를 사용하여 정책기반/규칙기반 처리를 분기�
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, Tuple
 
+import torch
+from fastmcp import FastMCP
 from langgraph.graph import StateGraph, END, START
+from transformers import AutoModel, AutoTokenizer
 
 from app.core.langsmith_config import get_langsmith_config
 from app.domain.v10.soccer.models.states.team_state import TeamProcessingState
@@ -34,14 +37,27 @@ class TeamOrchestrator:
         """
         self.model_dir = model_dir or self._get_default_model_dir()
 
+        # KoELECTRA 모델 로드
+        self.koelectra_model, self.koelectra_tokenizer = self._load_koelectra_model()
+
+        # FastMCP 서버 생성
+        self.mcp = FastMCP(name="team_orchestrator_koelectra")
+        self._setup_koelectra_tools()
+        # 통합 툴은 agent 초기화 후 설정
+        self._agent_initialized = False
+
         # Agent와 Service 인스턴스 생성
         self.agent = TeamAgent()
         self.service = TeamService()
 
+        # 통합 툴 설정 (agent 초기화 후)
+        self._setup_integrated_tools()
+        self._agent_initialized = True
+
         # LangGraph 그래프 빌드
         self.graph = self._build_graph()
 
-        logger.info("[오케스트레이터] TeamOrchestrator 초기화 완료 (LangGraph)")
+        logger.info("[오케스트레이터] TeamOrchestrator 초기화 완료 (LangGraph, KoELECTRA, ExaOne, FastMCP)")
 
     def _get_default_model_dir(self) -> Path:
         """기본 모델 디렉토리 경로를 반환합니다.
@@ -53,6 +69,248 @@ class TeamOrchestrator:
         project_root = current_file.parent.parent.parent.parent.parent.parent
         model_dir = project_root / "artifacts" / "models--monologg--koelectra-small-v3-discriminator"
         return model_dir
+
+    def _load_koelectra_model(self) -> Tuple[AutoModel, AutoTokenizer]:
+        """KoELECTRA 모델과 토크나이저를 로드합니다.
+
+        Returns:
+            (model, tokenizer) 튜플
+
+        Raises:
+            FileNotFoundError: 모델 디렉토리를 찾을 수 없을 때
+            RuntimeError: 모델 로딩 실패 시
+        """
+        if not self.model_dir.exists():
+            raise FileNotFoundError(f"모델 디렉토리를 찾을 수 없습니다: {self.model_dir}")
+
+        logger.info(f"[KoELECTRA] 모델 로딩 중: {self.model_dir}")
+
+        try:
+            # 토크나이저 로드
+            tokenizer = AutoTokenizer.from_pretrained(
+                str(self.model_dir),
+                local_files_only=True,
+            )
+            logger.info("[KoELECTRA] 토크나이저 로드 완료")
+
+            # 모델 로드
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = AutoModel.from_pretrained(
+                str(self.model_dir),
+                local_files_only=True,
+            ).to(device)
+            model.eval()
+            logger.info(f"[KoELECTRA] 모델 로드 완료 (디바이스: {device})")
+
+            return model, tokenizer
+
+        except Exception as e:
+            logger.error(f"[KoELECTRA] 모델 로딩 실패: {e}", exc_info=True)
+            raise RuntimeError(f"KoELECTRA 모델 로딩 실패: {e}") from e
+
+    def _setup_koelectra_tools(self) -> None:
+        """KoELECTRA 모델을 위한 FastMCP 툴을 설정합니다."""
+        @self.mcp.tool()
+        def koelectra_embed_text(text: str) -> Dict[str, Any]:
+            """KoELECTRA 모델을 사용하여 텍스트를 임베딩으로 변환합니다.
+
+            Args:
+                text: 임베딩할 텍스트
+
+            Returns:
+                임베딩 결과 딕셔너리
+            """
+            try:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                inputs = self.koelectra_tokenizer(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512,
+                    padding=True
+                ).to(device)
+
+                with torch.no_grad():
+                    outputs = self.koelectra_model(**inputs)
+                    # [CLS] 토큰 사용
+                    embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy().tolist()[0]
+
+                logger.info(f"[KoELECTRA 툴] 텍스트 임베딩 생성 완료: {len(embedding)}차원")
+                return {
+                    "success": True,
+                    "embedding": embedding,
+                    "dimension": len(embedding),
+                    "text_length": len(text)
+                }
+            except Exception as e:
+                logger.error(f"[KoELECTRA 툴] 임베딩 생성 실패: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+
+        @self.mcp.tool()
+        def koelectra_classify_text(text: str) -> Dict[str, Any]:
+            """KoELECTRA 모델을 사용하여 텍스트를 분류합니다.
+
+            Args:
+                text: 분류할 텍스트
+
+            Returns:
+                분류 결과 딕셔너리
+            """
+            try:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                inputs = self.koelectra_tokenizer(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512,
+                    padding=True
+                ).to(device)
+
+                with torch.no_grad():
+                    outputs = self.koelectra_model(**inputs)
+                    # [CLS] 토큰의 임베딩을 사용하여 분류
+                    cls_embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy().tolist()[0]
+
+                logger.info(f"[KoELECTRA 툴] 텍스트 분류 완료")
+                return {
+                    "success": True,
+                    "cls_embedding": cls_embedding,
+                    "text": text
+                }
+            except Exception as e:
+                logger.error(f"[KoELECTRA 툴] 분류 실패: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+
+        logger.info("[FastMCP] KoELECTRA 툴 설정 완료")
+
+    def _setup_integrated_tools(self) -> None:
+        """KoELECTRA와 ExaOne을 연결하는 통합 FastMCP 툴을 설정합니다."""
+        @self.mcp.tool()
+        async def koelectra_to_exaone_pipeline(text: str) -> Dict[str, Any]:
+            """KoELECTRA로 텍스트를 임베딩한 후 ExaOne으로 분석하는 파이프라인.
+
+            Args:
+                text: 처리할 텍스트
+
+            Returns:
+                통합 처리 결과 딕셔너리
+            """
+            try:
+                logger.info(f"[통합 파이프라인] 시작: {text[:50]}...")
+
+                # 1단계: KoELECTRA로 임베딩 생성
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                inputs = self.koelectra_tokenizer(
+                    text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512,
+                    padding=True
+                ).to(device)
+
+                with torch.no_grad():
+                    outputs = self.koelectra_model(**inputs)
+                    embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy().tolist()[0]
+
+                logger.info(f"[통합 파이프라인] KoELECTRA 임베딩 생성 완료: {len(embedding)}차원")
+
+                # 2단계: ExaOne으로 텍스트 분석
+                analysis_prompt = f"다음 텍스트를 분석하고 주요 내용을 요약해주세요:\n\n{text}"
+                formatted_prompt = f"[질문] {analysis_prompt}\n[답변] "
+                exaone_result = self.agent.exaone_llm.invoke(formatted_prompt)
+
+                if "[답변]" in exaone_result:
+                    exaone_result = exaone_result.split("[답변]")[-1].strip()
+
+                logger.info("[통합 파이프라인] ExaOne 분석 완료")
+
+                return {
+                    "success": True,
+                    "koelectra_embedding": {
+                        "dimension": len(embedding),
+                        "sample": embedding[:10]
+                    },
+                    "exaone_analysis": exaone_result,
+                    "original_text": text
+                }
+            except Exception as e:
+                logger.error(f"[통합 파이프라인] 처리 실패: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+
+        @self.mcp.tool()
+        async def analyze_team_with_models(team_data: Dict[str, Any]) -> Dict[str, Any]:
+            """KoELECTRA와 ExaOne을 사용하여 팀 데이터를 종합 분석합니다.
+
+            Args:
+                team_data: 분석할 팀 데이터 딕셔너리
+
+            Returns:
+                종합 분석 결과 딕셔너리
+            """
+            try:
+                logger.info(f"[통합 분석] 팀 데이터 분석 시작: {team_data.get('team_name', 'Unknown')}")
+
+                # 팀 데이터를 텍스트로 변환
+                data_text = json.dumps(team_data, ensure_ascii=False, indent=2)
+
+                # 1단계: KoELECTRA로 데이터 임베딩
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                inputs = self.koelectra_tokenizer(
+                    data_text,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512,
+                    padding=True
+                ).to(device)
+
+                with torch.no_grad():
+                    outputs = self.koelectra_model(**inputs)
+                    embedding = outputs.last_hidden_state[:, 0, :].cpu().numpy().tolist()[0]
+
+                # 2단계: ExaOne으로 데이터 분석
+                analysis_prompt = (
+                    f"다음 팀 데이터를 분석하고 주요 특징, 선수 구성, 전술 정보를 요약해주세요:\n\n{data_text}"
+                )
+                exaone_result = self.agent.exaone_llm.invoke(
+                    f"[질문] {analysis_prompt}\n[답변] "
+                )
+
+                if "[답변]" in exaone_result:
+                    exaone_result = exaone_result.split("[답변]")[-1].strip()
+
+                logger.info("[통합 분석] 팀 데이터 분석 완료")
+
+                return {
+                    "success": True,
+                    "team_data": team_data,
+                    "koelectra_embedding": {
+                        "dimension": len(embedding),
+                        "sample": embedding[:10]
+                    },
+                    "exaone_analysis": exaone_result,
+                    "summary": {
+                        "embedding_dim": len(embedding),
+                        "analysis_length": len(exaone_result)
+                    }
+                }
+            except Exception as e:
+                logger.error(f"[통합 분석] 팀 데이터 분석 실패: {e}", exc_info=True)
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "team_data": team_data
+                }
+
+        logger.info("[FastMCP] 통합 툴 설정 완료 (KoELECTRA + ExaOne)")
 
     def _build_graph(self) -> StateGraph:
         """LangGraph StateGraph를 빌드합니다.
