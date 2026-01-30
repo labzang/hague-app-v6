@@ -5,16 +5,13 @@ LangGraph StateGraph를 사용하여 정책기반/규칙기반 처리를 분기�
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Literal, Tuple
+from typing import List, Dict, Any, Optional, Literal
 
-import torch
-from fastmcp import FastMCP
 from langgraph.graph import StateGraph, END, START
-from transformers import AutoModel, AutoTokenizer
 
 from app.core.langsmith_config import get_langsmith_config
+from app.domain.v10.soccer.hub.mcp import get_soccer_central_mcp_server
 from app.domain.v10.soccer.models.states.stadium_state import StadiumProcessingState
-from app.domain.v10.soccer.spokes.agents.stadium_agent import StadiumAgent
 from app.domain.v10.soccer.spokes.services.stadium_service import StadiumService
 
 logger = logging.getLogger(__name__)
@@ -33,31 +30,31 @@ class StadiumOrchestrator:
         """StadiumOrchestrator 초기화.
 
         Args:
-            model_dir: KoELECTRA 모델 디렉토리 경로 (향후 사용 예정)
+            model_dir: KoELECTRA 모델 디렉토리 경로 (사용하지 않음, 중앙 서버 사용)
         """
-        self.model_dir = model_dir or self._get_default_model_dir()
+        # 중앙 MCP 서버 연결
+        self.central_mcp = get_soccer_central_mcp_server()
+        self.mcp = self.central_mcp.get_mcp_server()
 
-        # KoELECTRA 모델 로드
-        self.koelectra_model, self.koelectra_tokenizer = self._load_koelectra_model()
-
-        # FastMCP 서버 생성
-        self.mcp = FastMCP(name="stadium_orchestrator_koelectra")
-        self._setup_koelectra_tools()
-        # 통합 툴은 agent 초기화 후 설정
-        self._agent_initialized = False
-
-        # Agent와 Service 인스턴스 생성
-        self.agent = StadiumAgent()
+        # Service 인스턴스 생성
         self.service = StadiumService()
-
-        # 통합 툴 설정 (agent 초기화 후)
-        self._setup_integrated_tools()
-        self._agent_initialized = True
 
         # LangGraph 그래프 빌드
         self.graph = self._build_graph()
 
-        logger.info("[오케스트레이터] StadiumOrchestrator 초기화 완료 (LangGraph, KoELECTRA, ExaOne, FastMCP)")
+        logger.info("[오케스트레이터] StadiumOrchestrator 초기화 완료 (중앙 MCP 서버 사용)")
+
+    async def _call_central_tool(self, tool_name: str, **kwargs) -> Dict[str, Any]:
+        """중앙 MCP 서버의 툴을 호출합니다."""
+        try:
+            result = await self.central_mcp.call_tool(tool_name, **kwargs)
+            return result
+        except Exception as e:
+            logger.error(f"[오케스트레이터] 중앙 MCP 툴 호출 실패: {tool_name}, {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def _get_default_model_dir(self) -> Path:
         """기본 모델 디렉토리 경로를 반환합니다.
@@ -390,7 +387,34 @@ class StadiumOrchestrator:
         logger.info(f"[정책 처리 노드] {len(items)}개 항목 처리 시작")
 
         try:
-            result = await self.agent.process_stadiums(items)
+            # 중앙 MCP 서버를 통해 ExaOne으로 처리
+            processed_items = []
+            for item in items:
+                # 각 항목을 중앙 서버의 analyze_stadium_with_models로 분석
+                analysis_result = await self._call_central_tool("analyze_stadium_with_models", stadium_data=item)
+                if analysis_result.get("success"):
+                    processed_item = {
+                        **item,
+                        "processed_by": "central_mcp_server",
+                        "policy_applied": True,
+                        "analysis": analysis_result.get("exaone_analysis", "")
+                    }
+                else:
+                    processed_item = {
+                        **item,
+                        "processed_by": "central_mcp_server",
+                        "policy_applied": False,
+                        "error": analysis_result.get("error", "Unknown error")
+                    }
+                processed_items.append(processed_item)
+
+            result = {
+                "success": True,
+                "method": "policy_based",
+                "processed_count": len(processed_items),
+                "items": processed_items,
+            }
+
             logger.info("[정책 처리 노드] 처리 완료")
             return {
                 "policy_result": result
